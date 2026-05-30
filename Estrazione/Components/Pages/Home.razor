@@ -1,0 +1,435 @@
+﻿@page "/"
+@using Estrazione.Services
+@inject PdfNameExtractor PdfNameExtractor
+
+<div class="lottery-page">
+    <div class="lottery-content">
+        <div class="books-container">
+            <div class="book-card">
+                <img src="images/Frontend.webp" alt="Frontend Development" />
+            </div>
+
+            <div class="book-card">
+                <img src="images/Architecting.webp" alt="Architecting ASP.NET Core Applications" />
+            </div>
+        </div>
+
+        @if (names.Count == 0 && remainingBooks == TotalBooks)
+        {
+            <InputFile OnChange="LoadPdf" accept=".pdf" />
+        }
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <p class="error">@errorMessage</p>
+        }
+
+        @if (names.Count > 0 && !isExtracting && string.IsNullOrWhiteSpace(selectedName))
+        {
+            <button class="extract-button" @onclick="ExtractRandomName" disabled="@isExtractionDisabled">
+                Start extraction
+            </button>
+        }
+
+        @if (remainingBooks == 0 && !isExtracting)
+        {
+            <p class="finished">No books remaining.</p>
+        }
+
+        @if (isExtracting)
+        {
+            <div class="center-stage">
+                <div class="spinner-name">@rollingName</div>
+            </div>
+        }
+
+        @*         @if (!string.IsNullOrWhiteSpace(selectedName) && !isExtracting)
+        {
+            <div class="center-stage">
+                <div class="winner-layout">
+                    <div class="winner-card">
+                        <div class="confetti"></div>
+                        <h2>Winner</h2>
+                        <p>@selectedName</p>
+                    </div>
+
+                    @if (remainingBooks > 0)
+                    {
+                        <button class="extract-button next-button" @onclick="ExtractRandomName" disabled="@isExtractionDisabled">
+                            Next extraction
+                        </button>
+                    }
+                </div>
+            </div>
+        } *@
+        @if (!string.IsNullOrWhiteSpace(selectedName) && !isExtracting)
+        {
+            <div class="confetti-container">
+                @for (int i = 0; i < 350; i++)
+                {
+                    <div class="confetti-piece" style="@GetConfettiStyle()"></div>
+                }
+            </div>
+
+            <div class="center-stage">
+                <div class="winner-layout">
+                    <div class="winner-card">
+                        <h2>Winner</h2>
+                        <p>@selectedName</p>
+                    </div>
+
+                    @if (remainingBooks > 0)
+                    {
+                        <button class="extract-button next-button"
+                                @onclick="ExtractRandomName">
+                            Next extraction
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<string> names = new();
+    private string? selectedName;
+    private string? rollingName;
+    private string? errorMessage;
+
+    private readonly Random random = new();
+
+    private const int TotalBooks = 4;
+    private int remainingBooks = TotalBooks;
+
+    private bool isExtracting;
+
+    private bool isExtractionDisabled =>
+        isExtracting || names.Count == 0 || remainingBooks == 0;
+
+    private async Task LoadPdf(InputFileChangeEventArgs e)
+    {
+        names.Clear();
+        selectedName = null;
+        rollingName = null;
+        errorMessage = null;
+        remainingBooks = TotalBooks;
+
+        IBrowserFile file = e.File;
+
+        if (!file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Please upload a PDF file.";
+            return;
+        }
+
+        try
+        {
+            await using Stream uploadedStream = file.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024);
+            using MemoryStream memoryStream = new();
+
+            await uploadedStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            names = PdfNameExtractor.ExtractNames(memoryStream)
+                .Select(name => name.Trim())
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error while reading the PDF: {ex.Message}";
+        }
+    }
+
+    private async Task ExtractRandomName()
+    {
+        if (names.Count == 0)
+        {
+            errorMessage = "No names available.";
+            return;
+        }
+
+        if (remainingBooks == 0)
+        {
+            errorMessage = "No books remaining.";
+            return;
+        }
+
+        isExtracting = true;
+        selectedName = null;
+        errorMessage = null;
+
+        await InvokeAsync(StateHasChanged);
+
+        for (int i = 0; i < 35; i++)
+        {
+            rollingName = names[random.Next(names.Count)];
+
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(60 + i * 4);
+        }
+
+        int index = random.Next(names.Count);
+
+        selectedName = names[index];
+        names.RemoveAt(index);
+        remainingBooks--;
+
+        rollingName = null;
+        isExtracting = false;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private readonly string[] confettiColors =
+[
+    "#ff595e",
+    "#ffca3a",
+    "#8ac926",
+    "#1982c4",
+    "#6a4c93",
+    "#ff924c",
+    "#00c2a8",
+    "#f72585"
+];
+
+    private string GetConfettiStyle()
+    {
+        int left = random.Next(0, 100);
+
+        string color = confettiColors[random.Next(confettiColors.Length)];
+
+        int duration = random.Next(3, 8);
+
+        int delay = random.Next(0, 2000);
+
+        int size = random.Next(8, 18);
+
+        int rotation = random.Next(0, 360);
+
+        return $"""
+        left:{left}%;
+        background:{color};
+        width:{size}px;
+        height:{size}px;
+        transform:rotate({rotation}deg);
+        animation-duration:{duration}s;
+        animation-delay:-{delay}ms;
+        """;
+    }
+}
+
+<style>
+    .lottery-page {
+        height: 100vh;
+        overflow: hidden;
+        background: radial-gradient(circle, #fff7df, #f2f2f2);
+        font-family: Arial, sans-serif;
+    }
+
+    .lottery-content {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding-top: 28px;
+    }
+
+    .books-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 42px;
+        margin-bottom: 28px;
+    }
+
+    .book-card img {
+        width: 145px;
+        height: 205px;
+        object-fit: cover;
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, .25);
+        background: white;
+    }
+
+    .books-container .book-card:first-child {
+        transform: rotate(-5deg);
+    }
+
+    .books-container .book-card:last-child {
+        transform: rotate(5deg);
+    }
+
+    .extract-button {
+        padding: 18px 40px;
+        border: none;
+        border-radius: 999px;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        background: #ff8c00;
+        color: white;
+        box-shadow: 0 8px 0 #b85f00;
+        transition: transform .1s;
+        z-index: 10;
+    }
+
+        .extract-button:active {
+            transform: translateY(5px);
+            box-shadow: 0 3px 0 #b85f00;
+        }
+
+        .extract-button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+    .center-stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        pointer-events: auto;
+        z-index: 5;
+    }
+
+    .spinner-name {
+        padding: 34px 56px;
+        min-width: 620px;
+        border-radius: 28px;
+        background: white;
+        font-size: 46px;
+        font-weight: bold;
+        text-align: center;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, .25);
+        animation: pulse .25s infinite alternate;
+    }
+
+    .winner-card {
+        position: relative;
+        overflow: hidden;
+        padding: 50px 70px;
+        min-width: 650px;
+        border-radius: 30px;
+        background: white;
+        text-align: center;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, .25);
+        animation: winner-pop .7s ease-out;
+    }
+
+        .winner-card h2 {
+            font-size: 36px;
+            margin: 0;
+        }
+
+        .winner-card p {
+            font-size: 52px;
+            font-weight: bold;
+            margin: 20px 0 0;
+            color: #ff8c00;
+        }
+
+    .error {
+        color: red;
+        font-weight: bold;
+        margin-top: 20px;
+    }
+
+    .finished {
+        font-size: 22px;
+        font-weight: bold;
+        margin-top: 20px;
+    }
+
+    .confetti-container {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+        z-index: 1;
+    }
+
+    .confetti-piece {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        top: -20px;
+        animation-name: fall;
+        animation-timing-function: linear;
+        animation-fill-mode: both;
+        animation-iteration-count: 8;
+    }
+
+    .confetti::before,
+    .confetti::after {
+        content: "🎉 🎊 ✨ 🎉 🎊 ✨ 🎉 🎊 ✨";
+        position: absolute;
+        left: 0;
+        width: 100%;
+        font-size: 34px;
+        animation: confetti-fall 1.6s ease-out infinite;
+    }
+
+    .confetti::before {
+        top: -20px;
+    }
+
+    .confetti::after {
+        top: 30px;
+        animation-delay: .4s;
+    }
+
+    @@keyframes pulse {
+        from {
+            transform: scale(1);
+        }
+
+        to {
+            transform: scale(1.04);
+        }
+    }
+
+    @@keyframes winner-pop {
+        0% {
+            transform: scale(.6);
+            opacity: 0;
+        }
+
+        70% {
+            transform: scale(1.08);
+            opacity: 1;
+        }
+
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    @@keyframes confetti-fall {
+        from {
+            transform: translateY(-40px);
+            opacity: 1;
+        }
+
+        to {
+            transform: translateY(180px);
+            opacity: 0;
+        }
+    }
+
+    @@keyframes fall {
+        0% {
+            transform: translateY(-50px) rotate(0deg);
+            opacity: 1;
+        }
+
+        100% {
+            transform: translateY(120vh) rotate(1080deg);
+            opacity: 0.8;
+        }
+    }
+</style>
